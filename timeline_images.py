@@ -49,8 +49,10 @@ def stats_on_images_size(source_file, factor, weeks, fixed_width, fixed_height):
 
                 # crop height
                 if height < fixed_height:
-                    continue
-                elif height >= fixed_height:
+                    upper = 0
+                    lower = height
+
+                else:
                     upper = height//2 - fixed_height//2
                     lower = height//2 + fixed_height//2
 
@@ -79,9 +81,9 @@ def reduced_timeline(factor):
     images = stats_on_images_size(source_file, factor, weeks, fixed_width, fixed_height)
 
     total_width = len(images) * (fixed_width//2 + inter_image_space) - inter_image_space
-    total_height = max(len(week) for week in images.values()) * (fixed_height)
+    total_height = max(sum(im["y"] for im in week) for week in images.values())
 
-    new_im = Image.new('RGB', (int(total_width), int(total_height)))
+    new_im = Image.new('RGB', (int(total_width), int(total_height)),)
 
     x_offset = 0
 
@@ -90,8 +92,8 @@ def reduced_timeline(factor):
         for im in week:
             image = Image.open(im["path"])
             cropped_img = image.crop(im["crop"])
-            new_im.paste(cropped_img, (x_offset,y_offset))
-            y_offset -= fixed_height
+            new_im.paste(cropped_img, (x_offset,y_offset - cropped_img.size[1]))
+            y_offset -= cropped_img.size[1]
         x_offset += fixed_width//2 + inter_image_space
 
     new_im.save('images_dame_a_lhermine_divided_by_{}.jpg'.format(factor), optimize=True, quality=1)
