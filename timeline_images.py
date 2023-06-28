@@ -6,9 +6,15 @@ from collections import defaultdict
 from datetime import datetime
 
 
+def iterate_over_weeks():
+    start = datetime.strptime("2020-01-01", "%Y-%m-%d")
+    end = datetime.strptime("2020-12-31", "%Y-%m-%d")
+    for i in range((end - start).days//7):
+        yield i + 1
+
 def weekly_image_count(source_file):
 
-    weeks = defaultdict(int)
+    weeks = {w: 0 for w in iterate_over_weeks()}
     with casanova.reader(source_file) as reader:
         for row in reader:
             formatted_date = row[reader.headers.formatted_date]
@@ -19,7 +25,7 @@ def weekly_image_count(source_file):
 
 
 def stats_on_images_size(source_file, factor, weeks, fixed_width, resize_width):
-    images = defaultdict(list)
+    images = {w: [] for w in weeks}
 
     quarter_fixed_width = fixed_width//4
 
