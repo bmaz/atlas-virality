@@ -18,7 +18,7 @@ def weekly_image_count(source_file):
     return weeks
 
 
-def stats_on_images_size(source_file, factor, weeks, fixed_width, fixed_height):
+def stats_on_images_size(source_file, factor, weeks, fixed_width, resize_width):
     images = defaultdict(list)
 
     quarter_fixed_width = fixed_width//4
@@ -35,10 +35,6 @@ def stats_on_images_size(source_file, factor, weeks, fixed_width, fixed_height):
                 img = Image.open(path)
                 width, height = img.size
 
-                # crop width
-                if width < fixed_width:
-                    continue
-
                 if image_part == "left":
                     left = width//4 - quarter_fixed_width
                     right =  width//4 + quarter_fixed_width
@@ -47,14 +43,7 @@ def stats_on_images_size(source_file, factor, weeks, fixed_width, fixed_height):
                     left = (width//4)*3 - quarter_fixed_width
                     right = (width//4)*3 + quarter_fixed_width
 
-                # crop height
-                if height < fixed_height:
-                    upper = 0
-                    lower = height
-
-                else:
-                    upper = height//2 - fixed_height//2
-                    lower = height//2 + fixed_height//2
+                resized_height = int(resize_width*height/(fixed_width//2))
 
                 date = datetime.strptime(formatted_date, "%Y-%m-%d")
                 week = date.isocalendar()[1]
@@ -63,24 +52,23 @@ def stats_on_images_size(source_file, factor, weeks, fixed_width, fixed_height):
                 if len(images[week]) <= nb_images:
                     images[week].append({
                         "path": path,
-                        "crop": (left, upper, right, lower),
+                        "crop": (left, 0, right, height),
                         "x": right - left,
-                        "y": lower - upper,
+                        "y": resized_height,
                         "nb_images": nb_images
                     })
     return images
 
 
-def reduced_timeline(factor):
-    source_file = "dame_a_lhermine_slice_images.csv"
+def reduced_timeline(source_file, outfile, factor):
     inter_image_space = 100
-    fixed_width = 1024
-    fixed_height = 1000
+    fixed_width = 900
+    resize_width = 125
 
     weeks = weekly_image_count(source_file)
-    images = stats_on_images_size(source_file, factor, weeks, fixed_width, fixed_height)
+    images = stats_on_images_size(source_file, factor, weeks, fixed_width, resize_width)
 
-    total_width = len(images) * (fixed_width//2 + inter_image_space) - inter_image_space
+    total_width = len(images) * (resize_width + inter_image_space) - inter_image_space
     total_height = max(sum(im["y"] for im in week) for week in images.values())
 
     new_im = Image.new('RGB', (int(total_width), int(total_height)),)
@@ -92,12 +80,13 @@ def reduced_timeline(factor):
         for im in week:
             image = Image.open(im["path"])
             cropped_img = image.crop(im["crop"])
-            new_im.paste(cropped_img, (x_offset,y_offset - cropped_img.size[1]))
-            y_offset -= cropped_img.size[1]
-        x_offset += fixed_width//2 + inter_image_space
+            resized_img = cropped_img.resize((resize_width, im["y"]))
+            new_im.paste(resized_img, (x_offset,y_offset - resized_img.size[1]))
+            y_offset -= resized_img.size[1]
+        x_offset += resize_width + inter_image_space
 
-    new_im.save('images_dame_a_lhermine_divided_by_{}.jpg'.format(factor), optimize=True, quality=1)
+    new_im.save(outfile.replace(".jpg", "_divided_by_{}.jpg".format(factor)), optimize=True, quality=20)
 
 
 if __name__=="__main__":
-    reduced_timeline(int(sys.argv[1]))
+    reduced_timeline(sys.argv[1], sys.argv[2], int(sys.argv[3]))
