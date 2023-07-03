@@ -1,16 +1,18 @@
 import sys
 import math
 import casanova
+import imagehash
+import numpy as np
 from PIL import Image
-from collections import defaultdict
 from datetime import datetime
 
 
 def iterate_over_weeks():
     start = datetime.strptime("2020-01-01", "%Y-%m-%d")
     end = datetime.strptime("2020-12-31", "%Y-%m-%d")
-    for i in range((end - start).days//7):
+    for i in range((end - start).days//7 + 1):
         yield i + 1
+
 
 def weekly_image_count(source_file):
 
@@ -24,12 +26,28 @@ def weekly_image_count(source_file):
     return weeks
 
 
+def is_duplicate(image, hashes):
+    copy = image.copy()
+    image = image.convert("L").resize((8, 8), Image.LANCZOS)
+    data = image.getdata()
+    quantiles = np.arange(100)
+    quantiles_values = np.percentile(data, quantiles)
+    zdata = (np.interp(data, quantiles_values, quantiles) / 100 * 255).astype(np.uint8)
+    image.putdata(zdata)
+    hash = imagehash.dhash(image)
+    if hash in hashes:
+        return True, hashes
+    hashes.add(hash)
+    return False, hashes
+
+
 def stats_on_images_size(source_file, factor, weeks, fixed_width, resize_width):
     images = {w: [] for w in weeks}
 
     quarter_fixed_width = fixed_width//4
 
     with casanova.reader(source_file) as reader:
+        hashes = set()
         for row in reader:
             formatted_date = row[reader.headers.formatted_date]
             image_part = row[reader.headers.image_slice]
@@ -39,6 +57,11 @@ def stats_on_images_size(source_file, factor, weeks, fixed_width, resize_width):
 
                 path = row[reader.headers.absolute_path]
                 img = Image.open(path)
+
+                duplicate, hashes = is_duplicate(img, hashes)
+                if duplicate:
+                    continue
+
                 width, height = img.size
 
                 if image_part == "left":
@@ -69,7 +92,7 @@ def stats_on_images_size(source_file, factor, weeks, fixed_width, resize_width):
 def reduced_timeline(source_file, outfile, factor):
     inter_image_space = 100
     fixed_width = 900
-    resize_width = 125
+    resize_width = 200
 
     weeks = weekly_image_count(source_file)
     images = stats_on_images_size(source_file, factor, weeks, fixed_width, resize_width)
