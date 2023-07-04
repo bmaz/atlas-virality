@@ -1,33 +1,37 @@
 import sys
 import math
+import random
 import casanova
 import imagehash
 import numpy as np
+from tqdm import tqdm
 from PIL import Image
 from datetime import datetime
 
 
 def iterate_over_weeks():
-    start = datetime.strptime("2020-01-01", "%Y-%m-%d")
+    start = datetime.strptime("2020-03-01", "%Y-%m-%d")
     end = datetime.strptime("2020-12-31", "%Y-%m-%d")
     for i in range((end - start).days//7 + 1):
         yield i + 1
 
 
 def weekly_image_count(source_file):
-
+    print("Compute weekly image count")
     weeks = {w: 0 for w in iterate_over_weeks()}
     with casanova.reader(source_file) as reader:
-        for row in reader:
-            formatted_date = row[reader.headers.formatted_date]
-            date = datetime.strptime(formatted_date, "%Y-%m-%d")
-            weeks[date.isocalendar()[1]] += 1
+        for row in tqdm(reader, total=casanova.count(source_file)):
+            utc_time = row[reader.headers.utc_time]
+            if "2020" in utc_time:
+                date = datetime.strptime(utc_time, "%Y-%m-%dT%H:%M:%S")
+                week = date.isocalendar()[1]
+                if week in weeks:
+                    weeks[week] += 1
 
     return weeks
 
 
 def is_duplicate(image, hashes):
-    copy = image.copy()
     image = image.convert("L").resize((8, 8), Image.LANCZOS)
     data = image.getdata()
     quantiles = np.arange(100)
@@ -45,17 +49,43 @@ def stats_on_images_size(source_file, factor, weeks, fixed_width, resize_width):
     images = {w: [] for w in weeks}
 
     quarter_fixed_width = fixed_width//4
-
-    with casanova.reader(source_file) as reader:
+    print("Compute stats on image size")
+    with casanova.reverse_reader(source_file) as reader:
         hashes = set()
-        for row in reader:
-            formatted_date = row[reader.headers.formatted_date]
-            image_part = row[reader.headers.image_slice]
 
-            date = datetime.strptime(formatted_date, "%Y-%m-%d")
-            if date < datetime.strptime("2020-12-31", "%Y-%m-%d") and image_part in ["left", "right"]:
+        image_slices_are_given = "image_slice" in reader.headers
+        absolute_paths_are_given = "absolute_path" in reader.headers
 
+        for row in tqdm(reader, total=casanova.count(source_file)):
+            utc_time = row[reader.headers.utc_time]
+
+            if "2020" not in utc_time:
+                continue
+
+            if image_slices_are_given:
+                image_part = row[reader.headers.image_slice]
+                if image_part not in ["left", "right"]:
+                    continue
+            else:
+                image_part = random.choice(["left", "right"])
+
+            if absolute_paths_are_given:
                 path = row[reader.headers.absolute_path]
+            else:
+                path = row[reader.headers.filename]
+
+            if not (path.endswith("jpg") or path.endswith("png")):
+                continue
+
+            date = datetime.strptime(utc_time, "%Y-%m-%dT%H:%M:%S")
+            week = date.isocalendar()[1]
+
+            if week not in weeks:
+                continue
+
+            nb_images = math.ceil(weeks[week]/factor)
+            if len(images[week]) < nb_images:
+
                 img = Image.open(path)
 
                 duplicate, hashes = is_duplicate(img, hashes)
@@ -74,18 +104,13 @@ def stats_on_images_size(source_file, factor, weeks, fixed_width, resize_width):
 
                 resized_height = int(resize_width*height/(fixed_width//2))
 
-                date = datetime.strptime(formatted_date, "%Y-%m-%d")
-                week = date.isocalendar()[1]
-                nb_images = math.ceil(weeks[week]/factor)
-
-                if len(images[week]) <= nb_images:
-                    images[week].append({
-                        "path": path,
-                        "crop": (left, 0, right, height),
-                        "x": right - left,
-                        "y": resized_height,
-                        "nb_images": nb_images
-                    })
+                images[week].append({
+                    "path": path,
+                    "crop": (left, 0, right, height),
+                    "x": right - left,
+                    "y": resized_height,
+                    "nb_images": nb_images
+                })
     return images
 
 
@@ -104,7 +129,8 @@ def reduced_timeline(source_file, outfile, factor):
 
     x_offset = 0
 
-    for week in images.values():
+    print("Write chart")
+    for week in tqdm(images.values(), total=len(images)):
         y_offset = total_height
         for im in week:
             image = Image.open(im["path"])
