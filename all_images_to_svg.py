@@ -1,6 +1,8 @@
 import os
 import sys
 import casanova
+import base64
+from io import BytesIO
 from tqdm import tqdm
 from PIL import Image
 from datetime import datetime
@@ -63,7 +65,7 @@ def resize_image_to_square(image_path, size):
     return resized_image
 
 
-def stats_on_images(source_file, date_fmt, min_cluster):
+def stats_on_images(source_file, images_dir, date_fmt, min_cluster):
 
     clusters = dict()
 
@@ -71,7 +73,7 @@ def stats_on_images(source_file, date_fmt, min_cluster):
         utc_time = reader.headers.utc_time
         cluster_id = reader.headers.cluster_id
         quality = reader.headers.quality
-        path = reader.headers.absolute_path
+        path = lambda row: os.path.join(images_dir, row[reader.headers.path])
 
         for row in tqdm(reader, total=casanova.count(source_file)):
             date = datetime.strptime(row[utc_time], input_date_fmt).strftime(date_fmt)
@@ -83,7 +85,7 @@ def stats_on_images(source_file, date_fmt, min_cluster):
             if cluster not in clusters:
                 clusters[cluster] = {"quality": float(row[quality])*100, "count": 0, "images": []}
             clusters[cluster]["count"] += 1
-            clusters[cluster]["images"].append((row[path], date))
+            clusters[cluster]["images"].append((path(row), date))
 
     for cluster_id in reclusters.values():
         clusters[cluster_id]["quality"] = 4.5
@@ -93,14 +95,14 @@ def stats_on_images(source_file, date_fmt, min_cluster):
     return date_buckets, quality_buckets
 
 
-def write_timeline(source_file, out_folder, granularity, size, min_cluster):
+def write_timeline(source_file, images_dir, out_folder, granularity, size, min_cluster):
     if granularity == "day":
         date_fmt = "%Y-%m-%d"
     elif granularity == "week":
         date_fmt = "%Y-%W"
 
 
-    date_buckets, image_buckets = stats_on_images(source_file, date_fmt, min_cluster)
+    date_buckets, image_buckets = stats_on_images(source_file, images_dir, date_fmt, min_cluster)
     date_indices  = list(sorted(date_buckets))
 
     max_bucket = max(date_buckets.values())
@@ -112,32 +114,54 @@ def write_timeline(source_file, out_folder, granularity, size, min_cluster):
 
     os.makedirs(out_folder, exist_ok=True)
 
-    total_image = Image.new('RGBA', (nb_buckets*size, max_bucket*size), color=(255, 255, 255, 0))
+    #total_image = Image.new('RGBA', (nb_buckets*size, max_bucket*size), color=(255, 255, 255, 0))
 
-    with tqdm(total=casanova.count(source_file)) as pbar:
+    total_file = os.path.join(out_folder, "all_moreThan{}_{}Columns_{}Pixels".format(min_cluster, granularity, size))
 
-        for s in image_buckets:
-            for cluster_list in image_buckets[s].values():
-                for cluster in sorted(cluster_list, key=lambda x: x["count"], reverse=True):
-                    new_image = Image.new('RGBA', (nb_buckets*size, max_bucket*size), color=(255, 255, 255, 0))
-                    for image_path, image_date in cluster["images"]:
-                        x_offset = date_indices.index(image_date) * size
-                        y_offset = y_offsets[image_date] - size
-                        thumbnail = resize_image_to_square(image_path, size)
-                        rgba_thumbnail = thumbnail.convert("RGBA")
-                        total_image.paste(rgba_thumbnail, (x_offset, y_offset))
-                        new_image.paste(rgba_thumbnail, (x_offset, y_offset))
-                        y_offsets[image_date] = y_offset
-                    out_file = "{}_moreThan{}_{}Columns_{}Pixels.png".format(cluster["id"], min_cluster, granularity, size)
-                    out_file = os.path.join(out_folder, out_file)
-                    new_image.save(out_file, "PNG")
+    with open(total_file + ".svg", "w") as svgf:
+        svgf.write("""<svg xmlns="http://www.w3.org/2000/svg"
+  xmlns:xlink="http://www.w3.org/1999/xlink"
+  width="{}px" height="{}px"
+  style="background-color: black">
+""".format(nb_buckets*size, max_bucket*size))
 
-                    pbar.update(cluster["count"])
+        with tqdm(total=casanova.count(source_file)) as pbar:
 
-    total_file = os.path.join(out_folder, "all_moreThan{}_{}Columns_{}Pixels.png".format(min_cluster, granularity, size))
-    total_image.save(total_file, "PNG")
+            for s in image_buckets:
+                for cluster_list in image_buckets[s].values():
+                    for cluster in sorted(cluster_list, key=lambda x: x["count"], reverse=True):
+                        svgf.write('  <g id="{}">\n'.format(cluster["id"]))
+                        #new_image = Image.new('RGBA', (nb_buckets*size, max_bucket*size), color=(255, 255, 255, 0))
+
+                        for image_path, image_date in cluster["images"]:
+                            x_offset = date_indices.index(image_date) * size
+                            y_offset = y_offsets[image_date] - size
+                            try:
+                                thumbnail = resize_image_to_square(image_path, size)
+                                rgba_thumbnail = thumbnail.convert("RGBA")
+                                #total_image.paste(rgba_thumbnail, (x_offset, y_offset))
+                                #new_image.paste(rgba_thumbnail, (x_offset, y_offset))
+                                y_offsets[image_date] = y_offset
+
+                                buffered = BytesIO()
+                                thumbnail.save(buffered, format="PNG")
+                                img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+                                svgf.write('    <image x="{}" y="{}" width="{}" height="{}" xlink:href="data:image/png;base64,{}" />\n'.format(x_offset, y_offset, size, size, img_str))
+                            except FileNotFoundError:
+                                pass
+                        svgf.write('  </g>\n')
+
+                        #out_file = "{}_moreThan{}_{}Columns_{}Pixels.png".format(cluster["id"], min_cluster, granularity, size)
+                        #out_file = os.path.join(out_folder, out_file)
+                        #new_image.save(out_file, "PNG")
+
+                        pbar.update(cluster["count"])
+
+        svgf.write('</svg>\n')
+
+    #total_image.save(total_file + ".png", "PNG")
 
 
 
 if __name__=="__main__":
-    write_timeline(sys.argv[1], sys.argv[2], "day", 16, 5)
+    write_timeline(sys.argv[1], sys.argv[2], sys.argv[3], "day", 16, 5)
