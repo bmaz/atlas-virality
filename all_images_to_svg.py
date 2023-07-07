@@ -30,6 +30,9 @@ def sort_quality(clusters, min_cluster):
     size_quality_buckets = defaultdict(dict)
     date_buckets = defaultdict(int)
 
+    # Sort clusters by size and by quality. Write first big clusters with high quality.
+    # Skip clusters with quality < 1.
+
     for size in [25 * (2**i) for i in range(3, -1, -1)] + [min_cluster]:
         for quality in range(4, 0, -1):
             size_quality_buckets[size][quality] = []
@@ -107,22 +110,23 @@ def write_timeline(source_file, out_folder, granularity, size, min_cluster):
 
     y_offsets = {key: max_bucket*size for key in date_indices}
 
-    os.makedirs(out_folder ,exist_ok=True)
+    os.makedirs(out_folder, exist_ok=True)
 
-    total_image = Image.new('RGB', (nb_buckets*size, max_bucket*size),)
+    total_image = Image.new('RGBA', (nb_buckets*size, max_bucket*size), color=(255, 255, 255, 0))
 
     with tqdm(total=casanova.count(source_file)) as pbar:
 
         for s in image_buckets:
             for cluster_list in image_buckets[s].values():
                 for cluster in sorted(cluster_list, key=lambda x: x["count"], reverse=True):
-                    new_image = Image.new('RGB', (nb_buckets*size, max_bucket*size),)
+                    new_image = Image.new('RGBA', (nb_buckets*size, max_bucket*size), color=(255, 255, 255, 0))
                     for image_path, image_date in cluster["images"]:
                         x_offset = date_indices.index(image_date) * size
                         y_offset = y_offsets[image_date] - size
                         thumbnail = resize_image_to_square(image_path, size)
-                        total_image.paste(thumbnail, (x_offset, y_offset))
-                        new_image.paste(thumbnail, (x_offset, y_offset))
+                        rgba_thumbnail = thumbnail.convert("RGBA")
+                        total_image.paste(rgba_thumbnail, (x_offset, y_offset))
+                        new_image.paste(rgba_thumbnail, (x_offset, y_offset))
                         y_offsets[image_date] = y_offset
                     out_file = "{}_moreThan{}_{}Columns_{}Pixels.png".format(cluster["id"], min_cluster, granularity, size)
                     out_file = os.path.join(out_folder, out_file)
