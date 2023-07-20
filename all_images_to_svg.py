@@ -27,6 +27,10 @@ reclusters = {384: 7,
               139: 52,
 }
 
+zooms = {
+    3: {"x": 94, "y": 5, "width": 7, "height": 7} #jf à la perle, carré de 7 images par 7 images
+}
+
 
 def sort_quality(clusters, min_cluster):
     size_quality_buckets = defaultdict(dict)
@@ -131,29 +135,62 @@ def write_timeline(source_file, images_dir, out_folder, granularity, size, min_c
                 for cluster_list in image_buckets[s].values():
                     for cluster in sorted(cluster_list, key=lambda x: x["count"], reverse=True):
                         svgf.write('  <g id="{}">\n'.format(cluster["id"]))
-                        #new_image = Image.new('RGBA', (nb_buckets*size, max_bucket*size), color=(255, 255, 255, 0))
 
                         for image_path, image_date in cluster["images"]:
                             x_offset = date_indices.index(image_date) * size
                             y_offset = y_offsets[image_date] - size
                             try:
                                 thumbnail = resize_image_to_square(image_path, size)
-                                rgba_thumbnail = thumbnail.convert("RGBA")
-                                #total_image.paste(rgba_thumbnail, (x_offset, y_offset))
-                                #new_image.paste(rgba_thumbnail, (x_offset, y_offset))
-                                y_offsets[image_date] = y_offset
 
                                 buffered = BytesIO()
                                 thumbnail.save(buffered, format="PNG")
                                 img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-                                svgf.write('    <image x="{}" y="{}" width="{}" height="{}" xlink:href="data:image/png;base64,{}" />\n'.format(x_offset, y_offset, size, size, img_str))
+                                svgf.write('    <image x="{}" y="{}" width="{}" height="{}" xlink:href="data:image/png;base64,{}" />\n'.format(
+                                    x_offset, y_offset, size, size, img_str)
+                                )
+
+                                y_offsets[image_date] = y_offset
+
                             except FileNotFoundError:
                                 pass
-                        svgf.write('  </g>\n')
 
-                        #out_file = "{}_moreThan{}_{}Columns_{}Pixels.png".format(cluster["id"], min_cluster, granularity, size)
-                        #out_file = os.path.join(out_folder, out_file)
-                        #new_image.save(out_file, "PNG")
+                        if cluster["id"] in zooms:
+                            zoom = zooms[cluster["id"]]
+
+                            bottom_line = (zoom["x"], max_bucket - zoom["y"], zoom["x"] + zoom["width"], max_bucket - zoom["y"])
+                            bottom_line = (i * size for i in bottom_line)
+                            svgf.write('<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="red" stroke-width="5" />'.format(
+                                *bottom_line
+                            ))
+
+                            top_line = (
+                                zoom["x"],
+                                max_bucket - zoom["y"] - zoom["height"],
+                                zoom["x"] + zoom["width"],
+                                max_bucket - zoom["y"] - zoom["height"]
+                            )
+                            top_line = (i * size for i in top_line)
+                            svgf.write('<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="red" stroke-width="5" />'.format(
+                                *top_line
+                            ))
+
+                            left_line = (zoom["x"], max_bucket - zoom["y"] - zoom["height"], zoom["x"], max_bucket - zoom["y"])
+                            left_line = (i * size for i in left_line)
+                            svgf.write('<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="red" stroke-width="5" />'.format(
+                                *left_line
+                            ))
+
+                            right_line = (zoom["x"] + zoom["width"],
+                                          max_bucket - zoom["y"] - zoom["height"],
+                                          zoom["x"] + zoom["width"],
+                                          max_bucket - zoom["y"]
+                                          )
+                            right_line = (i * size for i in right_line)
+                            svgf.write('<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="red" stroke-width="5" />'.format(
+                                *right_line
+                            ))
+
+                        svgf.write('  </g>\n')
 
                         pbar.update(cluster["count"])
 
