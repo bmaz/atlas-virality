@@ -28,7 +28,9 @@ reclusters = {384: 7,
 }
 
 zooms = {
-    3: {"x": 94, "y": 5, "width": 7, "height": 7} #jf à la perle, carré de 7 images par 7 images
+    3: {"x": 94, "y": 6, "width": 7, "height": 6}, #jf à la perle
+    52: {"x": 108, "y": 23, "width": 5, "height": 6}, #fils de l'homme
+    6: {"x": 84, "y": 67, "width": 4, "height": 12}, #dame à l'hermine
 }
 
 
@@ -156,39 +158,13 @@ def write_timeline(source_file, images_dir, out_folder, granularity, size, min_c
 
                         if cluster["id"] in zooms:
                             zoom = zooms[cluster["id"]]
-
-                            bottom_line = (zoom["x"], max_bucket - zoom["y"], zoom["x"] + zoom["width"], max_bucket - zoom["y"])
-                            bottom_line = (i * size for i in bottom_line)
-                            svgf.write('<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="red" stroke-width="5" />'.format(
-                                *bottom_line
-                            ))
-
-                            top_line = (
-                                zoom["x"],
-                                max_bucket - zoom["y"] - zoom["height"],
-                                zoom["x"] + zoom["width"],
-                                max_bucket - zoom["y"] - zoom["height"]
-                            )
-                            top_line = (i * size for i in top_line)
-                            svgf.write('<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="red" stroke-width="5" />'.format(
-                                *top_line
-                            ))
-
-                            left_line = (zoom["x"], max_bucket - zoom["y"] - zoom["height"], zoom["x"], max_bucket - zoom["y"])
-                            left_line = (i * size for i in left_line)
-                            svgf.write('<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="red" stroke-width="5" />'.format(
-                                *left_line
-                            ))
-
-                            right_line = (zoom["x"] + zoom["width"],
-                                          max_bucket - zoom["y"] - zoom["height"],
-                                          zoom["x"] + zoom["width"],
-                                          max_bucket - zoom["y"]
-                                          )
-                            right_line = (i * size for i in right_line)
-                            svgf.write('<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="red" stroke-width="5" />'.format(
-                                *right_line
-                            ))
+                            svgf.write('<rect x="{}" y="{}" width="{}" height="{}" \
+                                    style="stroke:red;stroke-width:5;fill-opacity:0.0" />'.format(
+                                        zoom["x"] * size,
+                                        (max_bucket - zoom["y"] - zoom["height"]) * size,
+                                        zoom["width"] * size,
+                                        zoom["height"] * size
+                                    ))
 
                         svgf.write('  </g>\n')
 
